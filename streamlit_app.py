@@ -1,384 +1,271 @@
-#!/usr/bin/env python3
 """
-Malaysia AI Travel Guide - Streamlit Frontend
-Beautiful web interface for the Malaysia AI Travel Guide
+Streamlit Frontend for AI Chat Application
+A modern, responsive chat interface that connects to the FastAPI backend
 """
 
 import streamlit as st
 import requests
 import json
+from typing import List, Dict, Any
 import time
-from datetime import datetime
-from typing import Dict, Any, Optional
-import uuid
 
-# Page configuration
+# Configure Streamlit page
 st.set_page_config(
-    page_title="Malaysia AI Travel Guide",
-    page_icon="🇲🇾",
+    page_title="🤖 AI Chat Assistant",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Backend API configuration
-BACKEND_URL = "https://malaysia-ai-guide-api.onrender.com"
+# Backend configuration - works both locally and on Render
+import os
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+BACKEND_URL = API_BASE_URL
 
-# Custom CSS for beautiful styling
+# Custom CSS for beautiful UI
 st.markdown("""
 <style>
-    .main-header {
-        background: linear-gradient(90deg, #FF6B6B, #4ECDC4);
-        padding: 2rem;
-        border-radius: 10px;
-        text-align: center;
-        color: white;
-        margin-bottom: 2rem;
+    .main {
+        padding-top: 2rem;
     }
-    
-    .chat-message {
+    .stChatMessage {
         padding: 1rem;
         border-radius: 10px;
-        margin: 1rem 0;
-        border-left: 4px solid #4ECDC4;
-        background-color: #f0f2f6;
+        margin: 0.5rem 0;
     }
-    
     .user-message {
         background-color: #e3f2fd;
-        border-left-color: #2196f3;
+        border-left: 4px solid #2196f3;
     }
-    
-    .ai-message {
+    .assistant-message {
         background-color: #f3e5f5;
-        border-left-color: #9c27b0;
+        border-left: 4px solid #9c27b0;
     }
-    
-    .sidebar-content {
-        background-color: #f8f9fa;
+    .chat-container {
+        max-height: 600px;
+        overflow-y: auto;
         padding: 1rem;
+        border: 1px solid #ddd;
         border-radius: 10px;
-        margin: 1rem 0;
+        background-color: #fafafa;
     }
-    
-    .status-card {
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
+    .status-success {
+        color: #4caf50;
+        font-weight: bold;
     }
-    
-    .suggestion-button {
-        background-color: #e3f2fd;
-        border: 1px solid #90caf9;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        margin: 0.2rem;
-        cursor: pointer;
-        display: inline-block;
+    .status-error {
+        color: #f44336;
+        font-weight: bold;
+    }
+    .header-container {
+        text-align: center;
+        padding: 2rem 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        color: white;
     }
 </style>
 """, unsafe_allow_html=True)
 
-class MalaysiaAIFrontend:
-    """Frontend application for Malaysia AI Travel Guide"""
+def check_backend_health() -> bool:
+    """Check if the backend is running"""
+    try:
+        response = requests.get(f"{BACKEND_URL}/health", timeout=5)
+        return response.status_code == 200
+    except requests.RequestException:
+        return False
+
+def clean_display_text(text: str) -> str:
+    """Clean text for better display"""
+    if not text:
+        return text
     
-    def __init__(self):
-        self.backend_url = BACKEND_URL
-        self.session_id = self._get_session_id()
+    # Remove excessive whitespace while preserving paragraph breaks
+    import re
+    
+    # Replace multiple spaces with single space
+    cleaned = re.sub(r' +', ' ', text)
+    
+    # Clean up line breaks - preserve intentional formatting
+    cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
+    
+    # Remove trailing/leading whitespace
+    cleaned = cleaned.strip()
+    
+    return cleaned
+
+def send_message(prompt: str, history: List[Dict[str, str]]) -> str:
+    """Send message to backend and get streaming response"""
+    try:
+        # Get user-configured parameters or use defaults
+        max_tokens = st.session_state.get("max_tokens", 8192)
+        temperature = st.session_state.get("temperature", 0.7)
         
-    def _get_session_id(self) -> str:
-        """Get or create session ID"""
-        if 'session_id' not in st.session_state:
-            st.session_state.session_id = str(uuid.uuid4())
-        return st.session_state.session_id
-    
-    def check_backend_status(self) -> Dict[str, Any]:
-        """Check if backend is available"""
-        try:
-            response = requests.get(f"{self.backend_url}/api/status", timeout=10)
-            if response.status_code == 200:
-                return {"status": "online", "data": response.json()}
-            else:
-                return {"status": "error", "message": f"HTTP {response.status_code}"}
-        except requests.exceptions.RequestException as e:
-            return {"status": "offline", "message": str(e)}
-    
-    def send_chat_message(self, message: str, location: Optional[str] = None) -> Dict[str, Any]:
-        """Send message to backend AI"""
-        try:
-            payload = {
-                "message": message,
-                "user_id": self.session_id,
-                "location": location
+        # Enhanced payload to match Google Cloud Console parameters
+        payload = {
+            "message": prompt,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        response = requests.post(
+            f"{BACKEND_URL}/chat",
+            json=payload,
+            timeout=60  # Increased timeout for longer responses
+        )
+        
+        if response.status_code == 200:
+            response_data = response.json()
+            raw_response = response_data.get("response", "❌ No response from AI model")
+            model_used = response_data.get("model_used", "unknown")
+            
+            # Store response info for debugging
+            st.session_state["last_response_info"] = {
+                "length": len(raw_response),
+                "model": model_used,
+                "temp": temperature,
+                "max_tokens": max_tokens
             }
             
-            response = requests.post(
-                f"{self.backend_url}/api/chat",
-                json=payload,
-                timeout=30
-            )
+            # Minimal cleaning to preserve content quality
+            cleaned_response = raw_response.strip() if raw_response else "❌ No response from AI model"
+            return cleaned_response
+        else:
+            error_detail = response.text
+            try:
+                error_json = response.json()
+                if "detail" in error_json:
+                    error_detail = str(error_json["detail"])
+            except:
+                pass
+            return f"❌ Error: {response.status_code} - {error_detail}"
             
-            if response.status_code == 200:
-                return response.json()
-            else:
-                return {
-                    "error": f"HTTP {response.status_code}",
-                    "message": "Sorry, I'm having trouble connecting right now. Please try again!"
-                }
-                
-        except requests.exceptions.RequestException as e:
-            return {
-                "error": str(e),
-                "message": "I'm experiencing connection issues. Please check your internet and try again!"
-            }
-    
-    def get_knowledge_base(self) -> Dict[str, Any]:
-        """Get knowledge base from backend"""
-        try:
-            response = requests.get(f"{self.backend_url}/api/knowledge", timeout=10)
-            if response.status_code == 200:
-                return response.json()
-            return {}
-        except:
-            return {}
-    
-    def send_feedback(self, feedback_data: Dict[str, Any]) -> bool:
-        """Send feedback to backend"""
-        try:
-            response = requests.post(
-                f"{self.backend_url}/api/feedback",
-                json=feedback_data,
-                timeout=10
-            )
-            return response.status_code == 200
-        except:
-            return False
+    except requests.RequestException as e:
+        return f"❌ Connection error: {str(e)}"
 
 def main():
-    """Main application function"""
-    app = MalaysiaAIFrontend()
-    
     # Header
     st.markdown("""
-    <div class="main-header">
-        <h1>🇲🇾 Malaysia AI Travel Guide</h1>
-        <p>Discover the best food, destinations, and experiences in Malaysia!</p>
+    <div class="header-container">
+        <h1>🤖 AI Chat Assistant</h1>
+        <p>Powered by Fine-tuned Gemini Model on Vertex AI</p>
     </div>
     """, unsafe_allow_html=True)
     
     # Sidebar
     with st.sidebar:
-        st.markdown("### 🎯 Quick Actions")
+        st.markdown("### 📊 System Status")
         
-        # Backend status check
-        status = app.check_backend_status()
-        if status["status"] == "online":
-            st.markdown("""
-            <div class="status-card">
-                <strong>✅ AI Guide Online</strong><br>
-                Ready to help you explore Malaysia!
-            </div>
-            """, unsafe_allow_html=True)
-            
-            backend_data = status.get("data", {})
-            st.write(f"🤖 Knowledge Items: {backend_data.get('knowledge_items', 'N/A')}")
-            st.write(f"🧠 AI Status: {'Active' if backend_data.get('has_ai') else 'Fallback Mode'}")
-            
+        # Check backend status
+        if check_backend_health():
+            st.markdown('<p class="status-success">✅ Backend: Connected</p>', unsafe_allow_html=True)
         else:
-            st.error(f"❌ Backend Status: {status['status']}")
-            st.write("Please check your connection or try again later.")
+            st.markdown('<p class="status-error">❌ Backend: Disconnected</p>', unsafe_allow_html=True)
+            st.error("Please ensure the backend server is running on http://localhost:8000")
+            st.stop()
         
-        st.markdown("---")
+        st.markdown("### ⚙️ Settings")
         
-        # Location input
-        st.markdown("### 📍 Your Location (Optional)")
-        user_location = st.text_input(
-            "Where are you visiting?",
-            placeholder="e.g., Kuala Lumpur, Penang, Langkawi"
-        )
-        
-        st.markdown("---")
-        
-        # Knowledge explorer
-        st.markdown("### 📚 Knowledge Explorer")
-        knowledge = app.get_knowledge_base()
-        
-        if knowledge:
-            categories = knowledge.get("categories", {})
-            for category, items in categories.items():
-                with st.expander(f"{category.title()} ({len(items)} items)"):
-                    for item in items[:3]:  # Show first 3 items
-                        st.write(f"• {item['content'][:100]}...")
-        
-        st.markdown("---")
-        
-        # Feedback section
-        st.markdown("### 💭 Feedback")
-        if st.button("📝 Give Feedback"):
-            st.session_state.show_feedback = True
-
-    # Main content area
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        # Chat interface
-        st.markdown("### 💬 Chat with Malaysia AI")
-        
-        # Initialize chat history
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        
-        # Suggested questions
-        st.markdown("**💡 Try asking about:**")
-        suggestions = [
-            "What are the best Malaysian dishes to try?",
-            "Top destinations to visit in Malaysia",
-            "Best street food in Penang",
-            "Things to do in Kuala Lumpur",
-            "Malaysian desserts I should try"
-        ]
-        
-        # Create suggestion buttons
-        cols = st.columns(3)
-        for i, suggestion in enumerate(suggestions):
-            with cols[i % 3]:
-                if st.button(suggestion, key=f"suggestion_{i}"):
-                    st.session_state.user_input = suggestion
-        
-        # Chat input
-        user_input = st.text_input(
-            "Ask me anything about Malaysia:",
-            placeholder="e.g., What's the best food in Penang?",
-            key="chat_input"
-        )
-        
-        # Handle suggestion clicks
-        if hasattr(st.session_state, 'user_input'):
-            user_input = st.session_state.user_input
-            delattr(st.session_state, 'user_input')
-        
-        # Send message
-        if user_input:
-            # Add user message to history
-            st.session_state.chat_history.append({
-                "type": "user",
-                "content": user_input,
-                "timestamp": datetime.now()
-            })
+        # Advanced settings
+        with st.expander("🔧 Advanced Parameters"):
+            max_tokens = st.slider("Max Tokens", 1000, 16384, 8192, 1000)
+            temperature = st.slider("Temperature", 0.0, 2.0, 0.7, 0.1)
             
-            # Show loading
-            with st.spinner("🤔 Thinking about your question..."):
-                # Get AI response
-                response = app.send_chat_message(user_input, user_location)
-            
-            # Add AI response to history
-            ai_message = response.get("message", "I'm sorry, I couldn't process your request right now.")
-            st.session_state.chat_history.append({
-                "type": "ai",
-                "content": ai_message,
-                "sources": response.get("sources", []),
-                "suggestions": response.get("suggestions", []),
-                "timestamp": datetime.now()
-            })
-            
-            # Clear input
+            # Store in session state
+            st.session_state["max_tokens"] = max_tokens
+            st.session_state["temperature"] = temperature
+        
+        # Clear chat button
+        if st.button("🗑️ Clear Chat History", type="secondary"):
+            st.session_state.messages = []
             st.rerun()
         
-        # Display chat history
-        for i, chat in enumerate(reversed(st.session_state.chat_history[-10:])):  # Show last 10 messages
-            if chat["type"] == "user":
-                st.markdown(f"""
-                <div class="chat-message user-message">
-                    <strong>🧑 You:</strong><br>
-                    {chat["content"]}
-                </div>
-                """, unsafe_allow_html=True)
-            
-            else:  # AI message
-                st.markdown(f"""
-                <div class="chat-message ai-message">
-                    <strong>🤖 Malaysia AI Guide:</strong><br>
-                    {chat["content"]}
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Show sources if available
-                if chat.get("sources"):
-                    with st.expander("📚 Sources"):
-                        for source in chat["sources"]:
-                            st.write(f"• {source.get('content', 'N/A')}")
-                
-                # Show suggestions if available
-                if chat.get("suggestions"):
-                    st.markdown("**💡 Related questions:**")
-                    for suggestion in chat["suggestions"]:
-                        if st.button(suggestion, key=f"followup_{i}_{hash(suggestion)}"):
-                            st.session_state.user_input = suggestion
-                            st.rerun()
+        # Model info with endpoint details
+        st.markdown("### 🧠 Model Info")
+        st.info("""
+        **Model**: Fine-tuned Gemini (TourismMalaysia)  
+        **Provider**: Google Vertex AI  
+        **Endpoint**: 6528596580524621824  
+        **Features**: Enhanced tourism knowledge, Multi-turn conversation
+        """)
+        
+        # Last response debug info
+        if "last_response_info" in st.session_state:
+            info = st.session_state["last_response_info"]
+            st.markdown("### 📊 Last Response")
+            st.json({
+                "Response Length": f"{info['length']} chars",
+                "Model Used": info['model'],
+                "Temperature": info['temp'],
+                "Max Tokens": info['max_tokens']
+            })
+        
+        # Instructions
+        st.markdown("### 💡 How to Use")
+        st.markdown("""
+        1. Type your message in the chat input
+        2. Press Enter to send
+        3. Watch the AI respond in real-time
+        4. Continue the conversation naturally
+        """)
 
-    with col2:
-        # Quick info panel
-        st.markdown("### 🇲🇾 Malaysia Quick Facts")
-        
-        quick_facts = [
-            "🏛️ **Capital**: Kuala Lumpur",
-            "🗣️ **Languages**: Malay, English, Chinese, Tamil",
-            "💰 **Currency**: Malaysian Ringgit (MYR)",
-            "🌡️ **Climate**: Tropical, hot and humid",
-            "🍜 **Famous For**: Street food, diverse cuisine",
-            "🏝️ **Top Islands**: Langkawi, Penang, Perhentian"
-        ]
-        
-        for fact in quick_facts:
-            st.markdown(fact)
-        
-        st.markdown("---")
-        
-        # Weather info (placeholder)
-        st.markdown("### 🌤️ Weather Tips")
-        st.info("Malaysia has a tropical climate year-round. Pack light, breathable clothing and don't forget an umbrella for sudden rain showers!")
-        
-        st.markdown("---")
-        
-        # Travel tips
-        st.markdown("### ✈️ Travel Tips")
-        tips = [
-            "Try hawker centers for authentic local food",
-            "Learn basic Malay greetings",
-            "Respect local customs and dress codes",
-            "Use Grab for convenient transportation",
-            "Bargain at markets but not in malls"
-        ]
-        
-        for tip in tips:
-            st.write(f"💡 {tip}")
+    # Initialize chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-    # Feedback modal
-    if st.session_state.get("show_feedback"):
-        with st.form("feedback_form"):
-            st.markdown("### 📝 Share Your Feedback")
+    # Display chat history
+    st.markdown("### 💬 Chat Conversation")
+    
+    # Chat container
+    chat_container = st.container()
+    
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Type your message here..."):
+        # Add user message to chat history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Prepare conversation history for backend
+        history = []
+        for msg in st.session_state.messages[:-1]:  # Exclude the current prompt
+            if msg["role"] == "user":
+                history.append({"role": "user", "content": msg["content"]})
+            else:
+                history.append({"role": "assistant", "content": msg["content"]})
+
+        # Get AI response
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
             
-            rating = st.slider("How helpful was the AI guide?", 1, 5, 5)
-            feedback_text = st.text_area("Tell us about your experience:")
+            # Show thinking animation
+            with st.spinner("🤔 AI is thinking..."):
+                response = send_message(prompt, history)
             
-            submitted = st.form_submit_button("Submit Feedback")
-            
-            if submitted:
-                feedback_data = {
-                    "rating": rating,
-                    "feedback_text": feedback_text,
-                    "timestamp": datetime.now().isoformat(),
-                    "session_id": app.session_id
-                }
-                
-                if app.send_feedback(feedback_data):
-                    st.success("Thank you for your feedback! 🙏")
-                    st.session_state.show_feedback = False
-                    time.sleep(2)
-                    st.rerun()
-                else:
-                    st.error("Failed to send feedback. Please try again.")
+            # Display response
+            message_placeholder.markdown(response)
+        
+        # Add assistant response to chat history
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        
+        # Auto-scroll to bottom
+        st.rerun()
+
+    # Footer
+    st.markdown("---")
+    st.markdown("""
+    <div style="text-align: center; color: #666; padding: 1rem;">
+        🚀 Built with FastAPI + Streamlit | Powered by Google Vertex AI
+    </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main() 
