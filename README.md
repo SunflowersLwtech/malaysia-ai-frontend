@@ -1,67 +1,77 @@
 # 🌏 Malaysia Tourism AI - Frontend
 
-Modern Streamlit interface for Malaysia Tourism AI chatbot using fine-tuned Gemini model.
+A modern Streamlit interface for the Malaysia Tourism AI chatbot, powered by a fine-tuned Gemini model.
 
 ## 🚀 Render Free Tier Deployment
 
-### ✅ 免费版优势:
-- 每月 750 小时免费使用
-- 自动 HTTPS 证书
-- 支持环境变量配置
-- GitHub 自动部署
+### ✅ Free Tier Advantages:
 
-### ⚠️ 免费版限制:
-- **服务休眠**: 15分钟不活动后自动休眠
-- **冷启动**: 唤醒需要 10-30 秒
-- **内存限制**: 512MB RAM
-- **CPU限制**: 共享 CPU 资源
+  - 750 free instance hours per month
+  - Automatic HTTPS/SSL certificates
+  - Support for environment variable configuration
+  - Auto-deploy from GitHub
 
-### 🔧 部署配置:
+### ⚠️ Free Tier Limitations:
+
+  - **Instance Spindown**: The service automatically spins down after 15 minutes of inactivity.
+  - **Cold Start**: Waking up from a spun-down state can take 10-30 seconds.
+  - **Memory Limit**: 512MB RAM
+  - **CPU Limit**: Shared CPU resources
+
+### 🔧 Deployment Configuration:
 
 ```yaml
-# render.yaml (frontend部分)
-- type: web
-  name: malaysia-ai-frontend  
-  env: python
-  buildCommand: pip install -r requirements.txt
-  startCommand: streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.enableCORS false
-  envVars:
-    - key: API_BASE_URL
-      value: https://malaysia-ai-backend.onrender.com
-  autoDeploy: true
+# render.yaml (frontend section)
+services:
+  - type: web
+    name: malaysia-ai-frontend  
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true --server.enableCORS false
+    envVars:
+      - key: API_BASE_URL
+        value: https://malaysia-ai-backend.onrender.com # Your backend service URL
+    autoDeploy: true
 ```
 
 ### 📋 Dependencies:
-```
+
+```txt
 streamlit>=1.28.0
 requests>=2.28.0  
 google-generativeai>=0.3.0
 google-auth>=2.17.0
 ```
 
-## 💡 优化建议:
+## 💡 Optimization Suggestions:
 
-### 1. **减少冷启动影响:**
-- 使用 uptime monitoring 服务 (如 UptimeRobot)
-- 定期 ping 服务保持活跃
+### 1\. **Mitigating Cold Starts:**
 
-### 2. **用户体验优化:**
-- 添加"服务启动中"提示
-- 实现重试机制
-- 缓存常用响应
+  - Use an uptime monitoring service (e.g., UptimeRobot).
+  - Configure it to periodically ping the service's health check endpoint to keep it active.
 
-### 3. **资源优化:**
-- 最小化依赖包
-- 优化图片和静态资源
-- 使用 Streamlit 缓存功能
+### 2\. **User Experience Optimization:**
+
+  - On the frontend, add a "Service is starting, please wait..." message when an API call times out.
+  - Implement a retry mechanism in the frontend for API calls that fail due to a cold start.
+  - Cache frequently requested or non-dynamic responses.
+
+### 3\. **Resource Optimization:**
+
+  - Minimize the packages in `requirements.txt` to only what is essential.
+  - Optimize the size of images and other static assets.
+  - Leverage Streamlit's built-in caching features (`@st.cache_data`, `@st.cache_resource`).
 
 ## 🌐 Access URLs:
-- **Frontend**: https://malaysia-ai-frontend.onrender.com
-- **Backend**: https://malaysia-ai-backend.onrender.com
 
-## 🔍 监控:
-- 健康检查: `/health`  
-- 状态页面: [Render Dashboard](https://dashboard.render.com)
+  - **Frontend**: `https://malaysia-ai-frontend.onrender.com`
+  - **Backend**: `https://malaysia-ai-backend.onrender.com`
 
----
-**Note**: 免费版服务会在不活动后休眠，首次访问可能需要等待启动。
+## 🔍 Monitoring:
+
+  - **Health Check Endpoint**: `/health`
+  - **Status Page**: [Render Dashboard](https://dashboard.render.com)
+
+-----
+
+**Note**: The free tier service will spin down after a period of inactivity. The first visit after a period of rest may require a short wait for the service to start up.
